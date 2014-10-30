@@ -194,7 +194,7 @@ static void x86dis_reporter(enum x86_report_codes code, void *arg, void *junk) {
 	//fprintf(info.err, "X86DIS ERROR \'%s:\' 0x%08" PRIXPTR"\n", str, (unsigned long)arg);
 }
 
-DWORD NTAPI AttachHook(PVOID* funcPtr, PVOID hookPtr)
+DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
 {
 	// Is the engine running?
 	if (!engineRunning)
@@ -268,7 +268,7 @@ DWORD NTAPI StopHookEngine()
 	return !engineRunning;
 }
 
-DWORD NTAPI DetachHook(PVOID* funcPtr, PVOID hookPtr)
+DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr)
 {
 	// Is the engine running?
 	if (!engineRunning)
@@ -293,7 +293,7 @@ DWORD NTAPI DetachHook(PVOID* funcPtr, PVOID hookPtr)
 		{
 			int jmpDistance = ((int*)&nextInsn[1])[0];
 			nextInsn += insn.size;
-			origFuncPtr = &nextInsn[jmpDistance];
+			origFuncPtr = &nextInsn[jmpDistance-trampolineSize];
 			x86_oplist_free(&insn);
 			break;
 		}
@@ -304,7 +304,7 @@ DWORD NTAPI DetachHook(PVOID* funcPtr, PVOID hookPtr)
 
 	MEMORY_BASIC_INFORMATION allocInfo;
 	SIZE_T reqSize;
-	NtQueryVirtualMemory(GetCurrentProcess(), funcPtr[0], MemoryBasicInformation, &allocInfo, sizeof(MEMORY_INFORMATION_CLASS), &reqSize);
+	NtQueryVirtualMemory(GetCurrentProcess(), funcPtr[0], MemoryBasicInformation, &allocInfo, sizeof(MEMORY_BASIC_INFORMATION), &reqSize);
 
 	struct HookChunk newHook;
 

@@ -1,3 +1,5 @@
+#ifndef _NULL_HOOKS_H_
+#define _NULL_HOOKS_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -8,9 +10,11 @@ extern "C" {
 	DWORD NTAPI StopHookEngine();
 	DWORD NTAPI ProcessHookQueue();
 	DWORD NTAPI ProcessUnhookQueue();
-	DWORD NTAPI AttachHook(PVOID* funcPtr, PVOID hookPtr);
-	DWORD NTAPI DetachHook(PVOID* funcPtr, PVOID hookPtr);
+	DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr);
+	DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr);
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
