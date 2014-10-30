@@ -1,11 +1,11 @@
 #include "stdafx.h"
 
-#define InitHookChunk(o,a,b,c,d,e,f) o._functionPointer = a;\
-	o._trampolinePointer = b;\
-o._hookPointer = c;\
-o._allignmentBytes = d;\
-o._jmpDistance = e;\
-o._trampolineAllocSize = f;
+#define InitHookChunk(o,a,b,c,d,e,f) o->_functionPointer = a;\
+	o->_trampolinePointer = b;\
+o->_hookPointer = c;\
+o->_allignmentBytes = d;\
+o->_jmpDistance = e;\
+o->_trampolineAllocSize = f;
 
 struct HookChunk
 {
@@ -234,12 +234,9 @@ DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
 	trampBytes[trampolineSize] = 0xE9;
 	((int*)&trampBytes[trampolineSize + 1])[0] = CalculateJmp((int)nextInsn, trampolineSize + (int)trampPointer);
 
-	struct HookChunk newHook;
-
-	InitHookChunk(newHook, funcPtr[0], trampPointer, hookPtr, trampolineSize - 5, CalculateJmp((int)hookPtr, (int)funcPtr[0]), trampAllocSize);
-
 	struct HookChunk* pNewHook = (struct HookChunk*)malloc(sizeof(struct HookChunk));
-	pNewHook[0] = newHook;
+
+	InitHookChunk(pNewHook, funcPtr[0], trampPointer, hookPtr, trampolineSize - 5, CalculateJmp((int)hookPtr, (int)funcPtr[0]), trampAllocSize);
 
 	HookQueueArray[HookCount++] = pNewHook;
 
@@ -306,12 +303,9 @@ DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr)
 	SIZE_T reqSize;
 	NtQueryVirtualMemory(GetCurrentProcess(), funcPtr[0], MemoryBasicInformation, &allocInfo, sizeof(MEMORY_BASIC_INFORMATION), &reqSize);
 
-	struct HookChunk newHook;
-
-	InitHookChunk(newHook, origFuncPtr, funcPtr[0], hookPtr, trampolineSize, 0, allocInfo.RegionSize);
-
 	struct HookChunk* pNewHook = (struct HookChunk*)malloc(sizeof(struct HookChunk));
-	pNewHook[0] = newHook;
+
+	InitHookChunk(pNewHook, origFuncPtr, funcPtr[0], hookPtr, trampolineSize, 0, allocInfo.RegionSize);
 
 	UnhookQueueArray[UnhookCount++] = pNewHook;
 
