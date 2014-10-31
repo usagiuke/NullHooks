@@ -9,7 +9,7 @@
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
-[Rr]elease/
+
 x64/
 build/
 bld/
@@ -182,3 +182,4 @@ $RECYCLE.BIN/
 Hook/Hook.dll
 Guildwork/Resources/Hook.dll
 Guildwork/Resources/Guildwork.exe
+*.tlog
