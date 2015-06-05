@@ -1,14 +1,21 @@
 #include "stdafx.h"
+#include "insn.h"
+#include <stdint.h>
+
+static const int is64Bit = sizeof(void*) == 8;
+static const int jmpOpSize = sizeof(void*) == 8 ? 14 : 5;
 
 #define InitHookChunk(o,a,b,c,d,e,f) o->_functionPointer = a;\
 	o->_trampolinePointer = b;\
 o->_hookPointer = c;\
 o->_allignmentBytes = d;\
 o->_jmpDistance = e;\
-o->_trampolineAllocSize = f;
+o->_trampolineAllocSize = f;\
+o->vft_hook = 0
 
 struct HookChunk
 {
+	int vft_hook;
 	PVOID _functionPointer;
 	PVOID _trampolinePointer;
 	PVOID _hookPointer;
@@ -24,14 +31,14 @@ DWORD HookCount = 0u;
 DWORD UnhookCount = 0u;
 BOOL engineRunning = FALSE;
 
-static int NTAPI CalculateJmp(int dest, int src)
+static int CalculateJmp(int dest, int src)
 {
 	int jmpDest = dest;
 	int jmpSrc = src + 5;
 	return jmpDest - jmpSrc;
 }
 
-static BOOL NTAPI SuspendProcess()
+static BOOL SuspendProcess()
 {
 	HANDLE hThreadSnap = INVALID_HANDLE_VALUE;
 	THREADENTRY32 te32;
@@ -68,7 +75,7 @@ static BOOL NTAPI SuspendProcess()
 	return TRUE;
 }
 
-static BOOL NTAPI ResumeProcess()
+static BOOL ResumeProcess()
 {
 	HANDLE hThreadSnap = INVALID_HANDLE_VALUE;
 	THREADENTRY32 te32;
@@ -105,13 +112,13 @@ static BOOL NTAPI ResumeProcess()
 	return TRUE;
 }
 
-DWORD NTAPI SetHookThread(DWORD threadId)
+DWORD SetHookThread(DWORD threadId)
 {
 	HookThread = threadId;
 	return 0;
 }
 
-DWORD NTAPI ProcessHookQueue()
+DWORD ProcessHookQueue()
 {
 
 	SuspendProcess();
@@ -119,15 +126,41 @@ DWORD NTAPI ProcessHookQueue()
 	for (DWORD i = 0u; i < HookCount; i++)
 	{
 		struct HookChunk* hook = HookQueueArray[i];
+		if (hook->vft_hook) {
+			PVOID* vftableLoc = *(PVOID**)hook->_functionPointer;
+			PVOID pagePtr = (PVOID)vftableLoc;
+			SIZE_T pointerSize = sizeof(PVOID);
+			ULONG oldProtect;
+			NtProtectVirtualMemory(GetCurrentProcess(), &pagePtr, &pointerSize, PAGE_EXECUTE_READWRITE, &oldProtect);
+			PVOID realFunction = vftableLoc[0];
+			vftableLoc[0] = hook->_hookPointer;
+			((PVOID*)hook->_functionPointer)[0] = realFunction;
+			NtProtectVirtualMemory(GetCurrentProcess(), &pagePtr, &pointerSize, oldProtect, &oldProtect);
+			free(hook);
+			continue;
+		}
 		PUCHAR funcBytes = (PUCHAR)hook->_functionPointer;
 		PVOID pageptr = funcBytes;
-		DWORD thunkSize = hook->_allignmentBytes + 5;
+		SIZE_T thunkSize = hook->_allignmentBytes + jmpOpSize;
 		ULONG oldProtect;
 		NtProtectVirtualMemory(GetCurrentProcess(), (PVOID*)&pageptr, &thunkSize, PAGE_EXECUTE_READWRITE, &oldProtect);
-		funcBytes[0] = 0xE9;
-		((int*)&funcBytes[1])[0] = hook->_jmpDistance;
+		if (!is64Bit) {
+			funcBytes[0] = 0xE9;
+			((int*)&funcBytes[1])[0] = hook->_jmpDistance;
+		}
+		else {
+#pragma pack(push, 1)
+			struct {
+				uint8_t jmpFF;
+				uint8_t jmp25;
+				uint32_t zero;
+				void* dest;
+			} jmp64 = { 0xFF, 0x25, 0x00000000, hook->_hookPointer };
+			memcpy_s(&funcBytes[0], jmpOpSize, &jmp64, jmpOpSize);
+#pragma pack(pop)
+		}
 		for (DWORD x = 0u; x < hook->_allignmentBytes; x++)
-			funcBytes[x + 5] = 0xCC;
+			funcBytes[x + jmpOpSize] = 0xCC;
 
 		NtProtectVirtualMemory(GetCurrentProcess(), (PVOID*)&pageptr, &thunkSize, oldProtect, &oldProtect);
 
@@ -141,7 +174,7 @@ DWORD NTAPI ProcessHookQueue()
 	return 0;
 }
 
-DWORD NTAPI ProcessUnhookQueue()
+DWORD ProcessUnhookQueue()
 {
 
 	SuspendProcess();
@@ -150,7 +183,7 @@ DWORD NTAPI ProcessUnhookQueue()
 	{
 		struct HookChunk* hook = UnhookQueueArray[i];
 		PVOID pageptr = hook->_functionPointer;
-		DWORD thunkSize = hook->_allignmentBytes;
+		SIZE_T thunkSize = hook->_allignmentBytes;
 		ULONG oldProtect;
 		NtProtectVirtualMemory(GetCurrentProcess(), (PVOID*)&pageptr, &thunkSize, PAGE_EXECUTE_READWRITE, &oldProtect);
 
@@ -170,31 +203,7 @@ DWORD NTAPI ProcessUnhookQueue()
 	return 0;
 }
 
-static void x86dis_reporter(enum x86_report_codes code, void *arg, void *junk) {
-	char * str;
-
-	/* here we could examine the error and do something useful;
-	* instead we just print that an error occurred */
-	switch (code) {
-	case report_disasm_bounds:
-		str = "Attempt to disassemble RVA beyond end of buffer";
-		break;
-	case report_insn_bounds:
-		str = "Instruction at RVA extends beyond buffer";
-		break;
-	case report_invalid_insn:
-		str = "Invalid opcode at RVA";
-		break;
-	case report_unknown:
-	default:	/* make GCC shut up */
-		str = "Unknown Error";
-		break;
-	}
-
-	//fprintf(info.err, "X86DIS ERROR \'%s:\' 0x%08" PRIXPTR"\n", str, (unsigned long)arg);
-}
-
-DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
+DWORD AttachHookVFTable(PVOID* funcPtr, PVOID hookPtr)
 {
 	// Is the engine running?
 	if (!engineRunning)
@@ -202,21 +211,48 @@ DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
 
 	// Is this our first hook?
 	if (!HookQueueArray)
-		*(void**)&HookQueueArray = malloc(4);
+		*(void**)&HookQueueArray = malloc(sizeof(void*));
 	else
-		*(void**)&HookQueueArray = realloc(HookQueueArray, 4 * (HookCount + 1));
+		*(void**)&HookQueueArray = realloc(HookQueueArray, sizeof(void*) * (HookCount + 1));
 
-	DWORD trampolineSize = 0u;
+	struct HookChunk* pNewHook = (struct HookChunk*)malloc(sizeof(struct HookChunk));
+
+	pNewHook->vft_hook = TRUE;
+	pNewHook->_functionPointer = funcPtr;
+	pNewHook->_hookPointer = hookPtr;
+	HookQueueArray[HookCount++] = pNewHook;
+
+	return 1;
+}
+
+DWORD DetachhHookVFTable(PVOID* funcPtr, PVOID hookPtr)
+{
+	return 1;
+}
+
+DWORD AttachHook(PVOID* funcPtr, PVOID hookPtr)
+{
+	// Is the engine running?
+	if (!engineRunning)
+		return -1;
+
+	// Is this our first hook?
+	if (!HookQueueArray)
+		*(void**)&HookQueueArray = malloc(sizeof(void*));
+	else
+		*(void**)&HookQueueArray = realloc(HookQueueArray, sizeof(void*) * (HookCount + 1));
+
+	int trampolineSize = 0u;
 	PUCHAR nextInsn = (PUCHAR)funcPtr[0];
 
 	// Parse asm until we have enough space for a jmp instruction.
-	while (trampolineSize < 5)
+	while (trampolineSize < jmpOpSize)
 	{
-		x86_insn_t insn;
-		x86_disasm(nextInsn, 20, (uint32_t)nextInsn, 0, &insn);
-		trampolineSize += insn.size;
-		nextInsn += insn.size;
-		x86_oplist_free(&insn);
+		struct insn instruct = {0};
+		insn_init(&instruct, nextInsn, is64Bit);
+		insn_get_length(&instruct);
+		trampolineSize += instruct.length;
+		nextInsn += instruct.length;
 	}
 
 	PVOID trampPointer = NULL;
@@ -231,12 +267,24 @@ DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
 
 	// Append our jmp instruction to the trampoline.
 	PUCHAR trampBytes = (PUCHAR)(trampPointer);
-	trampBytes[trampolineSize] = 0xE9;
-	((int*)&trampBytes[trampolineSize + 1])[0] = CalculateJmp((int)nextInsn, trampolineSize + (int)trampPointer);
-
+	if (!is64Bit) {
+		trampBytes[trampolineSize] = 0xE9;
+		((int*)&trampBytes[trampolineSize + 1])[0] = CalculateJmp((int)nextInsn, trampolineSize + (int)trampPointer);
+	}
+	else {
+#pragma pack(push, 1)
+		struct {
+			uint8_t jmpFF;
+			uint8_t jmp25;
+			uint32_t zero;
+			void* dest;
+		} jmp64 = { 0xFF, 0x25, 0x00000000, nextInsn };
+		memcpy_s(&trampBytes[trampolineSize], jmpOpSize, &jmp64, jmpOpSize);
+#pragma pack(pop)
+	}
 	struct HookChunk* pNewHook = (struct HookChunk*)malloc(sizeof(struct HookChunk));
 
-	InitHookChunk(pNewHook, funcPtr[0], trampPointer, hookPtr, trampolineSize - 5, CalculateJmp((int)hookPtr, (int)funcPtr[0]), trampAllocSize);
+	InitHookChunk(pNewHook, funcPtr[0], trampPointer, hookPtr, trampolineSize - jmpOpSize, CalculateJmp((int)hookPtr, (int)funcPtr[0]), trampAllocSize);
 
 	HookQueueArray[HookCount++] = pNewHook;
 
@@ -245,27 +293,27 @@ DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr)
 	return 1;
 }
 
-DWORD NTAPI StartHookEngine()
+DWORD StartHookEngine()
 {
 	if (!engineRunning)
 	{
-		x86_init(opt_none, x86dis_reporter, NULL);
+		//x86_init(opt_none, NULL, NULL);
 		engineRunning = TRUE;
 	}
 	return engineRunning;
 }
 
-DWORD NTAPI StopHookEngine()
+DWORD StopHookEngine()
 {
 	if (engineRunning)
 	{
-		x86_cleanup();
+		//x86_cleanup();
 		engineRunning = FALSE;
 	}
 	return !engineRunning;
 }
 
-DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr)
+DWORD DetachHook(PVOID* funcPtr, PVOID hookPtr)
 {
 	// Is the engine running?
 	if (!engineRunning)
@@ -284,19 +332,20 @@ DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr)
 
 	while (1)
 	{
-		x86_insn_t insn;
-		x86_disasm(nextInsn, 20, (uint32_t)nextInsn, 0, &insn);
-		if ((insn.type == insn_jmp) && (insn.size == 5u))
+		struct insn instruct = {0};
+		insn_init(&instruct, nextInsn, 0);
+		insn_get_length(&instruct);
+		insn_get_opcode(&instruct);
+
+		if (instruct.opcode.value == 0xE9)
 		{
 			int jmpDistance = ((int*)&nextInsn[1])[0];
-			nextInsn += insn.size;
+			nextInsn += instruct.length;
 			origFuncPtr = &nextInsn[jmpDistance-trampolineSize];
-			x86_oplist_free(&insn);
 			break;
 		}
-		trampolineSize += insn.size;
-		nextInsn += insn.size;
-		x86_oplist_free(&insn);
+		trampolineSize += instruct.length;
+		nextInsn += instruct.length;
 	}
 
 	MEMORY_BASIC_INFORMATION allocInfo;

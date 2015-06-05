@@ -18,15 +18,3 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
-#include "libdisasm/qword.h"
-#include "libdisasm/x86_imm.h"
-#include "libdisasm/ia32_insn.h"
-#include "libdisasm/ia32_invariant.h"
-#include "libdisasm/x86_operand_list.h"
-#include "libdisasm/ia32_settings.h"
-#include "libdisasm/ia32_reg.h"
-#include "libdisasm/ia32_operand.h"
-#include "libdisasm/ia32_modrm.h"
-#include "libdisasm/ia32_opcode_tables.h"
-#include "libdisasm/ia32_implicit.h"
-#include "libdisasm/libdis.h"

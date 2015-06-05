@@ -18,33 +18,21 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="stdafx.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="targetver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ntapi.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="NullHooks.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="inat.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="inat_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="insn.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="inat_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="NullHooks.c">
+    <ClCompile Include="inat.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="stdafx.c">
+    <ClCompile Include="insn.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

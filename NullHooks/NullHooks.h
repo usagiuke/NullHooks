@@ -5,13 +5,13 @@
 extern "C" {
 #endif
 
-	DWORD NTAPI SetHookThread(DWORD threadId);
-	DWORD NTAPI StartHookEngine();
-	DWORD NTAPI StopHookEngine();
-	DWORD NTAPI ProcessHookQueue();
-	DWORD NTAPI ProcessUnhookQueue();
-	DWORD __fastcall AttachHook(PVOID* funcPtr, PVOID hookPtr);
-	DWORD __fastcall DetachHook(PVOID* funcPtr, PVOID hookPtr);
+	DWORD SetHookThread(DWORD threadId);
+	DWORD StartHookEngine();
+	DWORD StopHookEngine();
+	DWORD ProcessHookQueue();
+	DWORD ProcessUnhookQueue();
+	DWORD AttachHook(PVOID* funcPtr, PVOID hookPtr);
+	DWORD DetachHook(PVOID* funcPtr, PVOID hookPtr);
 
 #ifdef __cplusplus
 }
